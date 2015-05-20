@@ -27,8 +27,8 @@ import javax.jms.Message;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 
-import org.vertx.java.core.json.JsonObject;
-import org.vertx.java.core.logging.Logger;
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.logging.Logger;
 
 /**
  * The MessageConverter is used to convert JsonObject instances from Vert.x into JMS Messages
@@ -49,40 +49,39 @@ public class MessageConverter {
         this.logger = logger;
     }
 
-    public Message convertToJmsMessage(JsonObject source) {
+    public Message convertToJmsMessage(String textContent) throws RuntimeException {
         Message message = null;
 
         try {
-            Object bodyContent = source.getField(ActiveMqFieldName.BODY.toString());
-            if (bodyContent instanceof String) {
-                String textContent = (String) bodyContent;
+            TextMessage textMessage = session.createTextMessage();
+            textMessage.setText(textContent);
 
-                TextMessage textMessage = session.createTextMessage();
-                textMessage.setText(textContent);
+            message = textMessage;
+        }
+        catch (JMSException e) {
+            String errorMessage = "JMSException while converting String to JMS Message";
+            throw new RuntimeException(errorMessage,e);
+        }
 
-                message = textMessage;
+        return message;
+    }
+
+    public Message convertToJmsMessage(JsonObject jsonContent) throws RuntimeException {
+        Message message = null;
+
+        try {
+            Map<String, Object> mapContent = jsonContent.getMap();
+
+            MapMessage mapMessage = session.createMapMessage();
+            for (Entry<String, Object> entry : mapContent.entrySet()) {
+                mapMessage.setObject(entry.getKey(), entry.getValue());
             }
-            else if (bodyContent instanceof JsonObject) {
-                JsonObject jsonContent = (JsonObject) bodyContent;
-                Map<String, Object> mapContent = jsonContent.toMap();
 
-                MapMessage mapMessage = session.createMapMessage();
-                for (Entry<String, Object> entry : mapContent.entrySet()) {
-                    mapMessage.setObject(entry.getKey(), entry.getValue());
-                }
-
-                message = mapMessage;
-            }
-            else {
-                String className = bodyContent.getClass().getName();
-                String errorMessage = String.format(
-                        "unkown body content of type %s could not be converted to a JMS Message", className);
-                logger.error(errorMessage);
-            }
+            message = mapMessage;
         }
         catch (JMSException e) {
             String errorMessage = "JMSException while converting JsonObject to JMS Message";
-            logger.error(errorMessage, e);
+            throw new RuntimeException(errorMessage, e);
         }
 
         return message;
@@ -95,7 +94,7 @@ public class MessageConverter {
             if (source instanceof TextMessage) {
                 TextMessage textMessage = (TextMessage) source;
 
-                json.putString(ActiveMqFieldName.BODY.toString(), textMessage.getText());
+                json.put(ActiveMqFieldName.BODY.toString(), textMessage.getText());
             }
             else if (source instanceof MapMessage) {
                 MapMessage mapMessage = (MapMessage) source;
@@ -105,10 +104,10 @@ public class MessageConverter {
                 while (mapNames.hasMoreElements()) {
                     String fieldName = mapNames.nextElement();
 
-                    bodyContent.putValue(fieldName, mapMessage.getObject(fieldName));
+                    bodyContent.put(fieldName, mapMessage.getObject(fieldName));
                 }
 
-                json.putElement(ActiveMqFieldName.BODY.toString(), bodyContent);
+                json.put(ActiveMqFieldName.BODY.toString(), bodyContent);
             }
             else {
                 String messageType = source.getClass().getName();

@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.ithempel.vertx.mods.activemq;
+package de.ithempel.vertx.mods.activemq.impl;
 
 import javax.jms.Connection;
 import javax.jms.ConnectionFactory;
@@ -27,10 +27,16 @@ import javax.jms.MessageProducer;
 import javax.jms.Queue;
 import javax.jms.Session;
 
+import de.ithempel.vertx.mods.activemq.ActiveMqService;
+import de.ithempel.vertx.mods.activemq.MessageConverter;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.impl.LoggerFactory;
 import org.apache.activemq.ActiveMQConnectionFactory;
-import org.vertx.java.core.Handler;
-import org.vertx.java.core.json.JsonObject;
-import org.vertx.java.core.logging.Logger;
 
 /**
  * Client for the module to communicate with the ActiveMQ broker.
@@ -41,21 +47,22 @@ import org.vertx.java.core.logging.Logger;
  *
  * @author https://github.com/ithempel[Sebastian Hempel]
  */
-public class ActiveMqClient {
+public class ActiveMqServiceImpl implements ActiveMqService {
 
     private final String host;
     private final int port;
+    private final Vertx vertx;
     private Connection connection;
     private Session session;
 
-    private final Logger logger;
+    private final Logger logger = LoggerFactory.getLogger(ActiveMqServiceImpl.class);
     private MessageConverter converter;
 
-    public ActiveMqClient(Logger logger, String host, int port) {
-        this.logger = logger;
+    public ActiveMqServiceImpl(Vertx vertx, JsonObject config) {
+        this.vertx = vertx;
 
-        this.host = host;
-        this.port = port;
+        this.host = config.getString("host", "localhost");
+        this.port = config.getInteger("port", 61616);
     }
 
     /**
@@ -64,9 +71,8 @@ public class ActiveMqClient {
      * The method uses the host address and the port of the constructor. The Session will be opened
      * in the AUTO_ACKNOWLEDGE mode.
      */
-    public boolean connect() {
-        boolean success = true;
-
+    @Override
+    public void connect() {
         String url = String.format("tcp://%s:%d", host, port);
         ConnectionFactory connectionFactory = new ActiveMQConnectionFactory(url);
 
@@ -81,13 +87,9 @@ public class ActiveMqClient {
             logger.debug(debugMessage);
         }
         catch (JMSException e) {
-            success = false;
-
             String errorMessage = String.format("Cannot connect to ActiveMQ Broker on %s", url);
             logger.error(errorMessage, e);
         }
-
-        return success ;
     }
 
     /**
@@ -95,6 +97,7 @@ public class ActiveMqClient {
      *
      * If there is no open connection this method will do nothing.
      */
+    @Override
     public void disconnect() {
         try {
             connection.close();
@@ -106,14 +109,15 @@ public class ActiveMqClient {
     }
 
     /**
-     * The JsonObject with the message to send will be send to the queue destination of the
-     * message broker. Depending on the format of the message the Json structure will be converted
+     * The String with the message to send will be send to the queue destination of the
+     * message broker. Depending on the format of the message the String structure will be converted
      * to a corresponding JMS Message type.
      *
      * @param destination name of the destination / queue to send the message to
-     * @param message message to send as a Json structure
+     * @param message message to send as a String structure
      */
-    public void send(String destination, JsonObject message) {
+    @Override
+    public void sendString(String destination, String message, Handler<AsyncResult<JsonObject>> asyncResultHandler) {
         Message jmsMessage = converter.convertToJmsMessage(message);
 
         try {
@@ -125,10 +129,42 @@ public class ActiveMqClient {
             String debugMessage = String.format("Successfully send message of type %s on queue %s",
                     jmsMessage.getClass().getName(), destination);
             logger.debug(debugMessage);
+            asyncResultHandler.handle(Future.succeededFuture(new JsonObject().put("message",debugMessage)));
         } catch (JMSException e) {
             String errorMessage = String.format("Error sending message to ActiveMQ broker on queue %s",
                     destination);
             logger.error(errorMessage, e);
+            asyncResultHandler.handle(Future.failedFuture(e));
+        }
+    }
+
+    /**
+     * The JsonObject with the message to send will be send to the queue destination of the
+     * message broker. Depending on the format of the message the Json structure will be converted
+     * to a corresponding JMS Message type.
+     *
+     * @param destination name of the destination / queue to send the message to
+     * @param message message to send as a Json structure
+     */
+    @Override
+    public void send(String destination, JsonObject message, Handler<AsyncResult<JsonObject>> asyncResultHandler) {
+        Message jmsMessage = converter.convertToJmsMessage(message);
+
+        try {
+            Queue queue = session.createQueue(destination);
+            MessageProducer producer = session.createProducer(queue);
+
+            producer.send(jmsMessage);
+
+            String debugMessage = String.format("Successfully send message of type %s on queue %s",
+                    jmsMessage.getClass().getName(), destination);
+            logger.debug(debugMessage);
+            asyncResultHandler.handle(Future.succeededFuture(new JsonObject().put("message",debugMessage)));
+        } catch (JMSException e) {
+            String errorMessage = String.format("Error sending message to ActiveMQ broker on queue %s",
+                    destination);
+            logger.error(errorMessage, e);
+            asyncResultHandler.handle(Future.failedFuture(e));
         }
     }
 
@@ -140,7 +176,8 @@ public class ActiveMqClient {
      * @param destination destination / queue to receive messages from
      * @param subscriberHandler handler to call for the received messages
      */
-    public void subscribe(String destination, final Handler<JsonObject> subscriberHandler) {
+    @Override
+    public void subscribe(String destination, final Handler<AsyncResult<JsonObject>> subscriberHandler) {
         try {
             Queue queue = session.createQueue(destination);
             MessageConsumer consumer = session.createConsumer(queue);
@@ -154,7 +191,7 @@ public class ActiveMqClient {
                             message.getClass().getName());
                     logger.debug(debugMessage);
 
-                    subscriberHandler.handle(json);
+                    subscriberHandler.handle(Future.succeededFuture(json));
                 }
             });
 

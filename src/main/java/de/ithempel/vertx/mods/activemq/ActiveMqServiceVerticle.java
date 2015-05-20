@@ -17,10 +17,11 @@
  */
 package de.ithempel.vertx.mods.activemq;
 
-import org.vertx.java.busmods.BusModBase;
-import org.vertx.java.core.Handler;
-import org.vertx.java.core.eventbus.Message;
-import org.vertx.java.core.json.JsonObject;
+import de.ithempel.vertx.mods.activemq.impl.ActiveMqServiceImpl;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.impl.LoggerFactory;
+import io.vertx.serviceproxy.ProxyHelper;
 
 /**
  * Module / Verticle to communicate with an ActiveMQ message broker.
@@ -54,32 +55,38 @@ import org.vertx.java.core.json.JsonObject;
  *
  * @author https://github.com/ithempel[Sebastian Hempel]
  */
-public class ActiveMqBusMod extends BusModBase implements Handler<Message<JsonObject>> {
+public class ActiveMqServiceVerticle extends AbstractVerticle {
 
-    private ActiveMqClient amqClient;
+    private ActiveMqService service;
+    private Logger logger = LoggerFactory.getLogger(ActiveMqServiceVerticle.class);
 
     @Override
-    public void start() {
+    public void start() throws Exception {
         super.start();
 
-        String host = getOptionalStringConfig("host", "localhost");
-        int port = getOptionalIntConfig("port", 61616);
-        amqClient = new ActiveMqClient(logger, host, port);
-        if (amqClient.connect()) {
-            String address = getOptionalStringConfig("address", "vertx.mod-activemq-io");
-            eb.registerHandler(address, this);
+        // Create the service object
+        service = ActiveMqService.create(vertx,config());
 
-            String debugMessage = String.format("Listening on EventBus on address %s", address);
-            logger.debug(debugMessage);
+        // And register it on the event bus against the configured address
+        final String address = config().getString("address");
+        if (address == null) {
+            throw new IllegalStateException("address field must be specified in config for service verticle");
         }
+
+        ProxyHelper.registerService(ActiveMqService.class, vertx, service, address);
+
+        service.connect();
+
+        String debugMessage = String.format("Listening on EventBus on address %s", address);
+        logger.debug(debugMessage);
     }
 
     @Override
     public void stop() {
-        amqClient.disconnect();
+        service.disconnect();
     }
 
-    @Override
+    /*@Override
     public void handle(Message<JsonObject> message) {
         String command = getMandatoryString(ActiveMqFieldName.COMMAND.toString(), message);
 
@@ -107,5 +114,6 @@ public class ActiveMqBusMod extends BusModBase implements Handler<Message<JsonOb
             break;
         }
     }
+    */
 
 }

@@ -31,14 +31,15 @@ import javax.jms.Message;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.impl.LoggerFactory;
 import org.apache.activemq.command.ActiveMQMapMessage;
 import org.apache.activemq.command.ActiveMQTextMessage;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.vertx.java.core.json.JsonObject;
-import org.vertx.java.core.logging.Logger;
 
 import de.ithempel.vertx.mods.activemq.MessageConverter;
 
@@ -68,7 +69,7 @@ public class MessageConverterTest {
             }
         });
 
-        Logger logger = new Logger(null);
+        Logger logger = LoggerFactory.getLogger(MessageConverterTest.class);
 
         messageConverter = new MessageConverter(session, logger);
     }
@@ -77,7 +78,7 @@ public class MessageConverterTest {
     public void convertJsonObjectStringBodyToTextMessage() {
         String bodyContent = "body content";
         JsonObject source = new JsonObject();
-        source.putString("body", bodyContent);
+        source.put("body", bodyContent);
 
         Message destination = messageConverter.convertToJmsMessage(source);
 
@@ -88,7 +89,7 @@ public class MessageConverterTest {
     public void convertJsonObjectJsonBodyToMapMessage() {
         JsonObject bodyContent = new JsonObject();
         JsonObject source = new JsonObject();
-        source.putElement("body", bodyContent);
+        source.put("body", bodyContent);
 
         Message destination = messageConverter.convertToJmsMessage(source);
 
@@ -99,7 +100,7 @@ public class MessageConverterTest {
     public void convertToMessageUsingJmsSession() throws JMSException {
         String bodyContent = "body content";
         JsonObject source = new JsonObject();
-        source.putString("body", bodyContent);
+        source.put("body", bodyContent);
 
         messageConverter.convertToJmsMessage(source);
 
@@ -110,7 +111,7 @@ public class MessageConverterTest {
     public void convertJsonObjectStringBodyToTextMessageContent() throws JMSException {
         String bodyContent = "body content";
         JsonObject source = new JsonObject();
-        source.putString("body", bodyContent);
+        source.put("body", bodyContent);
 
         TextMessage destination = (TextMessage) messageConverter.convertToJmsMessage(source);
 
@@ -121,9 +122,9 @@ public class MessageConverterTest {
     public void convertJsonObjectJsonBodyToMapMessageContent() throws JMSException {
         String content = "body content";
         JsonObject bodyContent = new JsonObject();
-        bodyContent.putString("content", content);
+        bodyContent.put("content", content);
         JsonObject source = new JsonObject();
-        source.putElement("body", bodyContent);
+        source.put("body", bodyContent);
 
         MapMessage destination = (MapMessage) messageConverter.convertToJmsMessage(source);
 
@@ -133,15 +134,15 @@ public class MessageConverterTest {
     @Test
     public void convertJsonObjectJsonBodyToMapMessageWithAllEntries() throws JMSException {
         JsonObject bodyContent = new JsonObject();
-        bodyContent.putString("string", "String");
-        bodyContent.putBoolean("boolean", true);
-        bodyContent.putNumber("number", 123);
+        bodyContent.put("string", "String");
+        bodyContent.put("boolean", true);
+        bodyContent.put("number", 123);
         JsonObject source = new JsonObject();
-        source.putElement("body", bodyContent);
+        source.put("body", bodyContent);
 
         MapMessage destination = (MapMessage) messageConverter.convertToJmsMessage(source);
 
-        for (String key : bodyContent.toMap().keySet()) {
+        for (String key : bodyContent.getMap().keySet()) {
             assertThat(destination.itemExists(key), equalTo(true));
         }
     }
@@ -162,7 +163,7 @@ public class MessageConverterTest {
 
         JsonObject destination = messageConverter.convertToJsonObject(source);
 
-        assertThat(destination.getElement("body"), notNullValue());
+        assertThat(destination.getJsonObject("body"), notNullValue());
     }
 
 }
